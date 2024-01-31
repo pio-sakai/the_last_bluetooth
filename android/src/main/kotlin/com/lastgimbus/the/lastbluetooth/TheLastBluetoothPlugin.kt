@@ -5,6 +5,9 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
+import android.bluetooth.BluetoothA2dp
+import android.bluetooth.BluetoothHeadset
+import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -33,6 +36,7 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
     }
 
     private val scope = CoroutineScope(Dispatchers.IO)
+    private lateinit var context : Context
 
     /// The MethodChannel that will the communication between Flutter and native Android
     ///
@@ -115,6 +119,7 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
         }
         val successId = withContext(Dispatchers.IO) {
             try {
+                setProxy()
                 val socket = dev.createRfcommSocketToServiceRecord(serviceUUID)
                 if (!socket.isConnected) socket.connect()
                 rfcommSocketMap[id] = socket // this will exec only if .connect() is success
@@ -162,14 +167,76 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
     private suspend fun closeRfcomm(id: String) {
         withContext(Dispatchers.IO) {
             if (!rfcommSocketMap.containsKey(id)) Log.w(TAG, "Socket $id already disconnected")
+            closeProxy()
             rfcommSocketMap[id]?.close()
             rfcommSocketMap.remove(id)
         }
     }
 
+    @Suppress("unused")
+    private enum class ProfileType(private val profile: Int) {
+
+        HEADSET_CLIENT(BluetoothProfile.HEADSET),
+        A2DP_SINK(BluetoothProfile.A2DP);
+
+        companion object {
+
+            fun valueOf(profileType: Int) = values().first { it.profile == profileType }
+
+            fun profileTypeToString(profile: Int) = valueOf(profile).name
+        }
+    }
+    protected var bluetoothHeadsetClient: BluetoothHeadset? = null
+    protected var bluetoothA2dpSink: BluetoothA2dp? = null
+
+    private fun setProxy() {
+        bluetoothAdapter!!.getProfileProxy(context,serviceListener, BluetoothProfile.HEADSET)
+        bluetoothAdapter!!.getProfileProxy(context,serviceListener, BluetoothProfile.A2DP)
+    }
+
+    private fun closeProxy() {
+        if(bluetoothHeadsetClient != null) {
+            bluetoothAdapter!!.closeProfileProxy(BluetoothProfile.HEADSET,bluetoothHeadsetClient)
+        }
+
+        if (bluetoothA2dpSink != null) {
+            bluetoothAdapter!!.closeProfileProxy(BluetoothProfile.A2DP,bluetoothA2dpSink)
+        }
+
+    }
+
+    private val serviceListener = object : BluetoothProfile.ServiceListener {
+
+        override fun onServiceDisconnected(profile: Int) {
+            Log.v(
+                    TAG,
+                    "serviceListener - onServiceDisconnected: ${ProfileType.profileTypeToString(profile)}"
+            )
+            if (profile == BluetoothProfile.HEADSET) {
+                bluetoothHeadsetClient = null
+            }
+            if (profile == BluetoothProfile.A2DP) {
+                bluetoothA2dpSink = null
+            }
+        }
+
+        override fun onServiceConnected(profile: Int, proxy: BluetoothProfile?) {
+            Log.v(
+                    TAG,
+                    "serviceListener - onServiceConnected: ${ProfileType.profileTypeToString(profile)}"
+            )
+            if (profile == BluetoothProfile.HEADSET) {
+                bluetoothHeadsetClient = proxy as BluetoothHeadset
+            }
+            if (profile == BluetoothProfile.A2DP) {
+                bluetoothA2dpSink = proxy as BluetoothA2dp
+            }
+        }
+    }
+
     // ##### FlutterPlugin stuff #####
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        val context: Context = flutterPluginBinding.applicationContext
+        context = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "$PLUGIN_NAMESPACE/methods")
         channel.setMethodCallHandler(this)
 

@@ -101,6 +101,7 @@ class TheLastBluetooth {
     return _devicesStream!;
   }
 
+  // 接続
   Future<BluetoothConnection> connectRfcomm(
       BluetoothDevice device, String serviceUUID) async {
     final socketId = (await _methodChannel.invokeMethod<String>(
@@ -123,5 +124,11 @@ class TheLastBluetooth {
     // So i guess we can omit it since we nicely close in
     // _ecRfcomm.receiveBroadcastStream().listen(...)
     return BluetoothConnection(StreamChannel(input.stream, output.sink));
+  }
+
+  // 切断
+  Future<void> closeRfcomm(String serviceUUID) async {
+    await _methodChannel
+        .invokeMethod<String>('closeRfcomm', {'uuid': serviceUUID});
   }
 }
