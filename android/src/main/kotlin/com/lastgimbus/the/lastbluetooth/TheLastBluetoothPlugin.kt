@@ -112,6 +112,8 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
 
     @SuppressLint("MissingPermission")
     private suspend fun connectRfcomm(dev: BluetoothDevice, serviceUUID: UUID): String? {
+        bluetoothAdapter =  BluetoothAdapter.getDefaultAdapter()
+        Log.w(TAG, "BT Adaptor")
         val id = socketId(dev, serviceUUID)
         if (rfcommSocketMap.containsKey(id)) {
             Log.w(TAG, "Already connected to device")
@@ -167,8 +169,12 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
     private suspend fun closeRfcomm(id: String) {
         withContext(Dispatchers.IO) {
             if (!rfcommSocketMap.containsKey(id)) Log.w(TAG, "Socket $id already disconnected")
+            val sock = rfcommSocketMap[id]
             closeProxy()
-            rfcommSocketMap[id]?.close()
+//            sock?.inputStream?.close()
+//            sock?.outputStream?.close()
+            sock?.close()
+            Log.w(TAG, "Socket CLOSE!!")
             rfcommSocketMap.remove(id)
         }
     }
@@ -195,13 +201,10 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
     }
 
     private fun closeProxy() {
-        if(bluetoothHeadsetClient != null) {
-            bluetoothAdapter!!.closeProfileProxy(BluetoothProfile.HEADSET,bluetoothHeadsetClient)
-        }
+        bluetoothAdapter!!.closeProfileProxy(BluetoothProfile.HEADSET,bluetoothHeadsetClient)
+        bluetoothAdapter!!.closeProfileProxy(BluetoothProfile.A2DP,bluetoothA2dpSink)
 
-        if (bluetoothA2dpSink != null) {
-            bluetoothAdapter!!.closeProfileProxy(BluetoothProfile.A2DP,bluetoothA2dpSink)
-        }
+        Log.w(TAG, "CLOSE Proxy!!")
 
     }
 
@@ -227,6 +230,9 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
             )
             if (profile == BluetoothProfile.HEADSET) {
                 bluetoothHeadsetClient = proxy as BluetoothHeadset
+
+
+
             }
             if (profile == BluetoothProfile.A2DP) {
                 bluetoothA2dpSink = proxy as BluetoothA2dp
@@ -303,10 +309,18 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
             return
         }
         when (call.method) {
-            "isAvailable" -> result.success(true)
-            "isEnabled" -> result.success(bluetoothAdapter!!.isEnabled)
-            "getName" -> result.success(bluetoothAdapter!!.name)
-            "getPairedDevices" -> result.success(getPairedDevices())
+            "isAvailable" -> {
+                result.success(true)
+            }
+            "isEnabled" -> {
+                result.success(bluetoothAdapter!!.isEnabled)
+            }
+            "getName" -> {
+                result.success(bluetoothAdapter!!.name)
+            }
+            "getPairedDevices" -> {
+                result.success(getPairedDevices())
+            }
             "connectRfcomm" -> {
                 val address = call.argument<String>("address")!!
                 val uuid = UUID.fromString(call.argument<String>("uuid")!!)
@@ -321,7 +335,7 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
             }
 
             "closeRfcomm" -> {
-                val id = call.argument<String>("socketId")!!
+                val id = call.argument<String>("socketId") ?: return
                 scope.launch {
                     closeRfcomm(id)
                     withContext(Dispatchers.Main) { result.success(null) }
@@ -351,7 +365,9 @@ class TheLastBluetoothPlugin : FlutterPlugin, MethodCallHandler {
                 }
             }
 
-            else -> result.notImplemented()
+            else -> {
+                result.notImplemented()
+            }
         }
 
     }
